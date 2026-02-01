@@ -113,6 +113,80 @@ GET /api/search?keyword=关键词&pageNum=1&pageSize=20
 }
 ```
 
+#### ESP端音乐解析接口（ZZPET小狗专用）
+
+```
+GET /api/search/esp?msg=歌曲名称
+```
+
+**说明**：此接口专为 ZZPET 小狗设备提供，无需认证即可访问。接口会自动搜索、解析并返回第一首匹配歌曲的完整信息（包含音频播放链接）。
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| msg | string | 是 | 歌曲名称或关键词 |
+
+**请求示例**：
+
+```
+GET /api/search/esp?msg=晴天
+```
+
+**成功响应示例**：
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "success": true,
+    "songId": "12345",
+    "songName": "晴天",
+    "artist": "周杰伦",
+    "album": "叶惠美",
+    "duration": 269,
+    "coverUrl": "https://your-bucket.cos.ap-guangzhou.myqcloud.com/covers/12345.jpg",
+    "audioUrl": "https://your-bucket.cos.ap-guangzhou.myqcloud.com/music/12345.mp3",
+    "lyricUrl": "https://api.xiaodaokg.com/kw/kwlyric.php?songId=12345"
+  }
+}
+```
+
+**失败响应示例**：
+
+```json
+{
+  "code": 400,
+  "msg": "歌曲名称不能为空",
+  "data": null
+}
+```
+
+```json
+{
+  "code": 500,
+  "msg": "未找到相关歌曲",
+  "data": null
+}
+```
+
+```json
+{
+  "code": 500,
+  "msg": "解析失败: 获取音频链接失败",
+  "data": null
+}
+```
+
+**接口特点**：
+
+- 🔓 **无需认证**：ESP 设备可直接调用，无需登录或 Token
+- 🎯 **自动解析**：自动搜索并解析第一首匹配的歌曲
+- 💾 **智能缓存**：已解析过的歌曲直接返回，避免重复解析
+- 🎵 **完整信息**：返回包含音频 URL、封面、歌词等完整播放信息
+- ⚡ **快速响应**：缓存命中时秒级响应
+
 ### 音乐接口
 
 #### 解析并保存音乐
