@@ -2,6 +2,8 @@
 
 基于 Node.js + Express + MySQL + 腾讯云 COS 的音乐搜索解析简易管理平台。
 
+> ⚠️ **仅供学习与个人技术研究使用，请勿用于商业用途。** 本项目不存储、不提供、不分发任何音乐文件，仅提供搜索/解析接口的封装与存储适配，所有音乐内容的版权均归原权利人所有。使用前请阅读文末的 [免责声明](#免责声明)。
+
 ## 功能特性
 
 - **音乐搜索**：通过关键词搜索酷我音乐平台的歌曲
@@ -60,6 +62,11 @@ COS_BASE_URL=https://your-bucket-1234567890.cos.ap-guangzhou.myqcloud.com
 
 # 酷我 API 配置
 KUWO_API_KEY=your_api_key
+
+# ESP32 设备鉴权配置（固件内置）
+ESP_ACCESS_KEY=esp32_device_01
+ESP_ACCESS_SECRET=your_random_secret
+ESP_SIGNATURE_TTL=300
 ```
 
 ### 4. 初始化数据库
@@ -113,13 +120,64 @@ GET /api/search?keyword=关键词&pageNum=1&pageSize=20
 }
 ```
 
-#### ESP端音乐解析接口（ZZPET小狗专用）
+### ESP端接口（嵌入式设备专用）
+
+ESP 设备没有账号体系，以下接口均**不走账号登录**，而是通过**设备签名鉴权**访问，校验固件内置密钥的签名，无需登录即可调用。
+
+提供以下几种用法：
+
+| 用法 | 接口 | 说明 |
+|------|------|------|
+| 一步（兼容旧固件） | `GET /api/search/esp?msg=歌曲名称` | 自动搜索并解析**第一首**匹配歌曲，一步返回完整播放信息 |
+| 两步（推荐，可自由选歌） | `GET /api/search/esp/search` → `GET /api/music/esp/:songId` | 先返回候选歌曲列表（含 `songId`），设备选定后再获取该歌曲的完整播放信息 |
+| 主页/歌单展示 | `GET /api/search/esp/list` | 分页返回服务器**已入库**的音乐列表，支持按歌名/歌手过滤 |
+
+#### 鉴权请求头（三项必填）
+
+| 请求头 | 说明 |
+|--------|------|
+| X-ESP-Key | 设备标识，对应服务端的 `ESP_ACCESS_KEY` |
+| X-ESP-Timestamp | Unix 时间戳，支持秒或毫秒 |
+| X-ESP-Signature | HMAC-SHA256 签名（十六进制小写） |
+
+#### 签名算法
+
+```
+待签名字符串（\n 分隔）：
+METHOD\n{path}\n{query}\n{timestamp}\n{accessKey}
+
+signature = HMAC_SHA256(ESP_ACCESS_SECRET, 待签名字符串)
+```
+
+示例（`GET /api/search/esp?msg=晴天`，时间戳 1730000000000）：
+
+```
+GET\n/api/search/esp\nmsg=%E6%99%B4%E5%A4%A9\n1730000000000\nesp32_device_01
+```
+
+> 注意：`{path}` 为完整接口路径（如 `/api/search/esp`、`/api/music/esp/12345`）；`{query}` 使用 URL 编码后的原始查询串，且参数顺序需与请求 URL 保持一致。
+
+**鉴权失败响应示例**：
+
+```json
+{
+  "code": 401,
+  "msg": "签名校验失败",
+  "data": {
+    "serverTime": 1730000000123
+  }
+}
+```
+
+> 失败时会返回 `serverTime`，设备可用它校正本地时钟后重试。
+
+#### 一步接口（兼容旧固件）：搜索并解析第一首
 
 ```
 GET /api/search/esp?msg=歌曲名称
 ```
 
-**说明**：此接口专为 ZZPET 小狗设备提供，无需认证即可访问。接口会自动搜索、解析并返回第一首匹配歌曲的完整信息（包含音频播放链接）。
+**说明**：自动搜索并解析第一首匹配歌曲，已解析过的歌曲直接返回缓存，一步即可拿到音频链接。适合设备端无法展示候选列表的场景。
 
 **请求参数**：
 
@@ -131,6 +189,9 @@ GET /api/search/esp?msg=歌曲名称
 
 ```
 GET /api/search/esp?msg=晴天
+X-ESP-Key: esp32_device_01
+X-ESP-Timestamp: 1730000000000
+X-ESP-Signature: 3f2a...（签名值）
 ```
 
 **成功响应示例**：
@@ -179,13 +240,261 @@ GET /api/search/esp?msg=晴天
 }
 ```
 
-**接口特点**：
+#### 第一步：ESP搜索音乐（返回候选列表）
 
-- 🔓 **无需认证**：ESP 设备可直接调用，无需登录或 Token
-- 🎯 **自动解析**：自动搜索并解析第一首匹配的歌曲
+```
+GET /api/search/esp/search?msg=晴天&pageNum=1&pageSize=10
+```
+
+**说明**：只返回搜索结果候选列表，不做解析。设备展示候选歌曲（含 `songId`），由用户选定后再调用「第二步」接口获取音乐。
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| msg | string | 是 | 歌曲名称或关键词（也兼容 `keyword`） |
+| pageNum | number | 否 | 页码，默认 1 |
+| pageSize | number | 否 | 每页数量，默认 10 |
+
+**请求示例**：
+
+```
+GET /api/search/esp/search?msg=晴天&pageSize=10
+X-ESP-Key: esp32_device_01
+X-ESP-Timestamp: 1730000000000
+X-ESP-Signature: 3f2a...（签名值）
+```
+
+**成功响应示例**：
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "total": 100,
+    "rows": [
+      {
+        "songId": "12345",
+        "songName": "晴天",
+        "artist": "周杰伦",
+        "album": "叶惠美",
+        "duration": 269,
+        "coverUrl": "https://img1.kuwo.cn/star/albumcover/xxx.jpg",
+        "playCount": 10000
+      }
+    ]
+  }
+}
+```
+
+#### 第二步：ESP选中音乐并获取播放信息
+
+```
+GET /api/music/esp/:songId?songName=晴天&artist=周杰伦
+```
+
+**说明**：`songId` 为第一步搜索结果中的歌曲 ID。
+
+- 该歌曲**已解析过**：直接返回缓存的完整播放信息，无需携带歌曲信息；
+- 该歌曲**未解析过**：需携带 `songName` 等歌曲信息触发服务端解析入库后返回。
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| songId | string | 是 | 歌曲 ID（路径参数，来自搜索结果） |
+| songName | string | 首次必填 | 歌曲名称（已缓存歌曲可不传） |
+| artist | string | 否 | 歌手（首次解析建议携带） |
+| album | string | 否 | 专辑（可选） |
+| duration | number | 否 | 时长，秒（可选） |
+| coverUrl | string | 否 | 封面 URL（可选） |
+
+**请求示例**：
+
+```
+GET /api/music/esp/12345?songName=%E6%99%B4%E5%A4%A9&artist=%E5%91%A8%E6%9D%B0%E4%BC%A6
+X-ESP-Key: esp32_device_01
+X-ESP-Timestamp: 1730000000000
+X-ESP-Signature: 3f2a...（签名值）
+```
+
+**成功响应示例**：
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "success": true,
+    "songId": "12345",
+    "songName": "晴天",
+    "artist": "周杰伦",
+    "album": "叶惠美",
+    "duration": 269,
+    "coverUrl": "https://your-bucket.cos.ap-guangzhou.myqcloud.com/covers/12345.jpg",
+    "audioUrl": "https://your-bucket.cos.ap-guangzhou.myqcloud.com/music/12345.mp3",
+    "lyricUrl": "https://api.xiaodaokg.com/kw/kwlyric.php?songId=12345"
+  }
+}
+```
+
+#### 主页列表：ESP获取服务器已有音乐
+
+```
+GET /api/search/esp/list?pageNum=1&pageSize=10&songName=关键词&artist=歌手
+```
+
+**说明**：返回服务器上**已解析入库**的音乐列表（仅正常状态歌曲，按入库时间倒序），适合设备主页/歌单展示，播放时可直接使用返回的 `audioUrl` 或 `musicId`。
+
+**请求参数**：
+
+| 参数名 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| pageNum | number | 否 | 页码，默认 1 |
+| pageSize | number | 否 | 每页数量，默认 10 |
+| songName | string | 否 | 歌名模糊过滤（可选） |
+| artist | string | 否 | 歌手模糊过滤（可选） |
+
+**请求示例**：
+
+```
+GET /api/search/esp/list?pageNum=1&pageSize=10
+X-ESP-Key: esp32_device_01
+X-ESP-Timestamp: 1730000000000
+X-ESP-Signature: 3f2a...（签名值）
+```
+
+**成功响应示例**：
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "total": 25,
+    "rows": [
+      {
+        "musicId": 1,
+        "songId": "12345",
+        "songName": "晴天",
+        "artist": "周杰伦",
+        "album": "叶惠美",
+        "duration": 269,
+        "coverUrl": "https://your-bucket.cos.ap-guangzhou.myqcloud.com/covers/12345.jpg",
+        "audioUrl": "https://your-bucket.cos.ap-guangzhou.myqcloud.com/music/12345.mp3",
+        "lyricUrl": "https://api.xiaodaokg.com/kw/kwlyric.php?songId=12345",
+        "source": "kuwo",
+        "playCount": 10000,
+        "status": 1,
+        "createTime": "2026-01-01 12:00:00",
+        "updateTime": "2026-01-01 12:00:00"
+      }
+    ]
+  }
+}
+```
+
+#### 接口特点
+
+- 🔐 **设备签名鉴权**：只有内置密钥的固件可调用，密钥不随请求传输，抓包也无法伪造
+- ⏱ **防重放**：签名受时间窗口（`ESP_SIGNATURE_TTL`，默认 300 秒）限制且一次性有效
+- 🎯 **两步选歌**：先搜索候选列表，再按 `songId` 精确获取所选歌曲，避免一步接口只能命中第一首的问题
 - 💾 **智能缓存**：已解析过的歌曲直接返回，避免重复解析
 - 🎵 **完整信息**：返回包含音频 URL、封面、歌词等完整播放信息
 - ⚡ **快速响应**：缓存命中时秒级响应
+
+#### ESP32 固件接入示例（Arduino）
+
+> 以下示例调用「一步接口」`/api/search/esp`（兼容旧固件）。若改用两步流程，仅需把请求路径分别换成 `/api/search/esp/search`（搜索）和 `/api/music/esp/:songId`（获取音乐），签名方式完全相同——`{path}` 换成实际请求的完整路径即可。
+
+```cpp
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <mbedtls/md.h>
+#include <time.h>
+
+const char* API_HOST = "http://your-server";
+const char* ESP_ACCESS_KEY = "esp32_device_01";
+const char* ESP_ACCESS_SECRET = "your_random_secret";
+
+// URL 编码（中文歌名必须编码，且要与最终请求 URL 中的顺序一致）
+String urlEncode(const String& src) {
+  String out;
+  char buf[4];
+  for (size_t i = 0; i < src.length(); i++) {
+    char c = src[i];
+    if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+      out += c;
+    } else {
+      sprintf(buf, "%%%02X", (uint8_t)c);
+      out += buf;
+    }
+  }
+  return out;
+}
+
+// HMAC-SHA256，输出 64 位十六进制小写字符串
+String hmacSha256(const String& key, const String& msg) {
+  uint8_t mac[32];
+  mbedtls_md_context_t ctx;
+  const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, info, 1);
+  mbedtls_md_hmac_starts(&ctx, (const uint8_t*)key.c_str(), key.length());
+  mbedtls_md_hmac_update(&ctx, (const uint8_t*)msg.c_str(), msg.length());
+  mbedtls_md_hmac_finish(&ctx, mac);
+  mbedtls_md_free(&ctx);
+
+  String out;
+  char hex[3];
+  for (int i = 0; i < 32; i++) {
+    sprintf(hex, "%02x", mac[i]);
+    out += hex;
+  }
+  return out;
+}
+
+void requestMusic(const String& songName) {
+  String path = "/api/search/esp";
+  String query = "msg=" + urlEncode(songName);
+  String ts = String((uint64_t)time(nullptr) * 1000ULL);
+
+  String canonical = "GET\n" + path + "\n" + query + "\n" + ts + "\n" + ESP_ACCESS_KEY;
+  String signature = hmacSha256(ESP_ACCESS_SECRET, canonical);
+
+  HTTPClient http;
+  http.begin(String(API_HOST) + path + "?" + query);
+  http.addHeader("X-ESP-Key", ESP_ACCESS_KEY);
+  http.addHeader("X-ESP-Timestamp", ts);
+  http.addHeader("X-ESP-Signature", signature);
+
+  int httpCode = http.GET();
+  if (httpCode == 200) {
+    String payload = http.getString();
+    Serial.println(payload);
+  } else {
+    Serial.printf("请求失败: %d\n", httpCode);
+  }
+  http.end();
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin("SSID", "PASSWORD");
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+
+  // 时间同步（签名依赖时间戳，必须先同步）
+  configTime(8 * 3600, 0, "ntp.aliyun.com");
+  while (time(nullptr) < 1700000000) delay(500);
+
+  requestMusic("晴天");
+}
+
+void loop() {}
+```
+
+> 若设备确实无法同步时间，可在服务端配置 `ESP_STATIC_TOKEN` 作为简易模式（设备只发送 `X-ESP-Token`），但密钥会随每个请求明文传输，仅建议调试使用。
 
 ### 音乐接口
 
@@ -268,6 +577,8 @@ music-api-cos/
 │   │   ├── httpClient.js      # HTTP 请求封装
 │   │   └── audioConverter.js  # 音频转换工具
 │   └── middlewares/
+│       ├── auth.js            # JWT 认证中间件
+│       ├── espAuth.js         # ESP32 设备签名鉴权中间件
 │       ├── errorHandler.js    # 错误处理中间件
 │       └── validator.js       # 参数校验中间件
 ├── sql/
@@ -492,6 +803,20 @@ console.log(`[Parse] API 响应:`, result);
 3. **API Key**：酷我音乐解析需要第三方 API Key（项目使用www.52api.cn），请自行获取
 
 4. **API 稳定性**：第三方 API 可能存在不稳定或失效的情况，建议准备备用方案
+
+## 免责声明
+
+1. **使用范围**：本项目为开源的技术学习项目，仅供**学习、研究与个人技术交流**使用，**严禁用于任何商业用途**，也不得用于任何违反所在地法律法规的场景。
+2. **不提供音乐内容**：本项目自身**不存储、不托管、不提供、不分发**任何音乐、歌词、封面等受版权保护的内容。项目输出的音频、歌词等链接均来自**第三方公开接口或第三方解析服务**，本项目仅做请求转发与地址封装。
+3. **版权归属**：所有音乐作品、歌词、专辑封面及相关元数据的著作权、商标权等一切权利，均归其原始权利人（唱片公司、词曲作者、歌手、平台等）所有。请通过官方渠道获取授权后欣赏或使用相关作品。
+4. **无关联、无授权**：本项目与酷我音乐、腾讯云，以及其他任何音乐平台、API 服务商均**没有任何隶属、合作、代理或背书关系**，文中出现的平台名称、商标、Logo 仅为技术说明与兼容性描述，其权利归各自所有者所有。
+5. **第三方服务风险**：项目依赖的第三方接口（搜索、解析、歌词等）可能存在变更、失效、收费或合规风险。本项目对其可用性、准确性、合法性及持续性**不作任何明示或暗示的保证**，也不对此承担任何责任。
+6. **责任限制**：使用者须自行判断并承担使用本项目（或修改后的版本）所带来的一切风险与后果。因使用、修改、分发本项目而导致的任何直接或间接损失、数据损坏、账号封禁、法律纠纷等，作者及贡献者**不承担任何责任**。
+7. **合规义务**：使用者应自行确保其使用行为符合所在国家/地区的法律法规以及相关平台的服务条款，不得用于规避付费、批量抓取、二次分发等侵权或违规用途。请勿将本项目部署为面向公众的公开音乐服务。
+8. **侵权处理**：如权利人认为本项目存在侵犯其合法权益的内容，请通过仓库 Issue 联系，我们将在核实后**及时删除或调整**相关代码与文档。
+9. **密钥安全**：仓库中的 `.env`、示例密钥等仅用于本地开发演示，请勿提交真实的生产密钥；若密钥已泄露，请立即轮换。
+
+> 若您不同意上述任何条款，请停止使用本项目。
 
 ## License
 

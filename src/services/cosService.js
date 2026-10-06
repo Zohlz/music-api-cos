@@ -134,10 +134,10 @@ const CosService = {
   /**
    * 生成 COS 存储路径
    * @param {string} songId - 歌曲 ID
-   * @param {string} [ext='.mp3'] - 文件扩展名
+   * @param {string} [ext='.ogg'] - 文件扩展名
    * @returns {string} COS 路径
    */
-  generateCosKey(songId, ext = '.mp3') {
+  generateCosKey(songId, ext = '.ogg') {
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');

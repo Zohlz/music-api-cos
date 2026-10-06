@@ -100,6 +100,11 @@ function handleClear() {
   hasSearched.value = false
   pagination.value.current = 1
 }
+
+// antdv 表格插槽提供的 record 为宽松类型，这里收敛为 SearchResultItem
+function toSearchResultItem(record: Record<string, any>): SearchResultItem {
+  return record as SearchResultItem
+}
 </script>
 
 <template>
@@ -215,7 +220,7 @@ function handleClear() {
               type="primary"
               size="small"
               :loading="parsingIds.has(record.songId)"
-              @click="handleParse(record)"
+              @click="handleParse(toSearchResultItem(record))"
             >
               <template #icon>
                 <LoadingOutlined v-if="parsingIds.has(record.songId)" />

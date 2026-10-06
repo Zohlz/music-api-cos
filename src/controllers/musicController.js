@@ -1,5 +1,23 @@
+const ParseService = require('../services/parseService');
 const MusicService = require('../services/musicService');
 const response = require('../utils/response');
+
+/**
+ * 格式化 ESP 端音乐响应（与 /api/search/esp 返回结构一致）
+ */
+function formatEspMusic(music) {
+  return {
+    success: true,
+    songId: music.song_id,
+    songName: music.song_name,
+    artist: music.artist,
+    album: music.album,
+    duration: music.duration,
+    coverUrl: music.cover_url,
+    audioUrl: music.audio_url,
+    lyricUrl: music.lyric_url,
+  };
+}
 
 /**
  * 音乐控制器
@@ -74,6 +92,70 @@ const MusicController = {
       const result = MusicService.formatMusicResponse(music);
       response.success(res, result);
     } catch (error) {
+      next(error);
+    }
+  },
+
+  /**
+   * ESP端获取音乐（按歌曲ID）
+   * GET /api/music/esp/:songId
+   * 说明：songId 来自 GET /api/search/esp/search 返回的搜索结果。
+   * 若歌曲已解析入库则直接返回；否则需携带歌曲信息（songName 等）触发解析入库。
+   */
+  async espGetMusicBySongId(req, res, next) {
+    try {
+      const { songId } = req.params;
+      const { songName, artist, album, duration, coverUrl } = req.query;
+
+      if (!songId) {
+        return response.badRequest(res, '歌曲ID不能为空');
+      }
+
+      console.log(`[ESP] 收到获取歌曲请求: songId=${songId}`);
+
+      // 1. 查库，已解析则直接返回
+      const existing = await MusicService.findBySongId(songId);
+      if (existing && existing.audio_url) {
+        console.log(`[ESP] 歌曲已缓存: musicId=${existing.music_id}`);
+        return response.success(res, formatEspMusic(existing));
+      }
+
+      // 2. 未缓存则需要歌曲信息用于解析入库
+      const songNameStr = (songName || '').trim();
+      if (!songNameStr) {
+        console.error(`[ESP] 歌曲未缓存且缺少歌曲信息: songId=${songId}`);
+        return response.error(res, '歌曲未缓存，请携带歌曲信息（songName 等，可从搜索接口结果获取）');
+      }
+
+      console.log(`[ESP] 开始解析歌曲: songId=${songId}`);
+
+      try {
+        const { audioUrl, lyricUrl } = await ParseService.parseAndUpload({
+          songId,
+          songName: songNameStr,
+          artist: (artist || '').trim(),
+        });
+
+        // 3. 保存到数据库
+        const music = await MusicService.saveMusic({
+          songId,
+          songName: songNameStr,
+          artist: (artist || '').trim(),
+          album: (album || '').trim(),
+          duration: duration ? parseInt(duration) : null,
+          coverUrl: (coverUrl || '').trim(),
+          audioUrl,
+          lyricUrl,
+        });
+
+        console.log(`[ESP] 解析成功: musicId=${music.music_id}`);
+        return response.success(res, formatEspMusic(music));
+      } catch (parseError) {
+        console.error(`[ESP] 解析失败:`, parseError.message);
+        return response.error(res, `解析失败: ${parseError.message}`);
+      }
+    } catch (error) {
+      console.error(`[ESP] 处理失败:`, error.message);
       next(error);
     }
   },

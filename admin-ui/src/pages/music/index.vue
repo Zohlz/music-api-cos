@@ -88,28 +88,6 @@ async function handlePlay(record: Music) {
   }
 }
 
-function handleDelete(record: Music) {
-  Modal.confirm({
-    title: '确认删除',
-    content: `确定要删除《${record.songName}》吗？`,
-    okText: '确定',
-    cancelText: '取消',
-    onOk: async () => {
-      try {
-        const res = await deleteMusic(record.musicId)
-        if (res.code === 200) {
-          message.success('删除成功')
-          fetchList()
-        } else {
-          message.error(res.msg || '删除失败')
-        }
-      } catch {
-        message.error('删除失败')
-      }
-    },
-  })
-}
-
 async function confirmDelete(record: Music) {
   try {
     const res = await deleteMusic(record.musicId)
@@ -151,12 +129,18 @@ function handleBatchDelete() {
   })
 }
 
+// 表格行选择（antdv 行 key 类型为 string | number，这里统一转为 number）
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (keys: number[]) => {
-    selectedRowKeys.value = keys
+  onChange: (keys: (string | number)[]) => {
+    selectedRowKeys.value = keys.map((key) => Number(key))
   },
 }))
+
+// antdv 表格插槽提供的 record 为宽松类型，这里收敛为 Music
+function toMusic(record: Record<string, any>): Music {
+  return record as Music
+}
 
 onMounted(() => {
   fetchList()
@@ -263,7 +247,7 @@ onMounted(() => {
                 shape="square"
                 :size="48"
                 class="mr-3 flex-shrink-0 cursor-pointer"
-                @click="handlePlay(record)"
+                @click="handlePlay(toMusic(record))"
               >
                 <template #icon>
                   <CustomerServiceOutlined />
@@ -293,7 +277,7 @@ onMounted(() => {
                   type="primary" 
                   shape="circle" 
                   size="small" 
-                  @click="handlePlay(record)"
+                  @click="handlePlay(toMusic(record))"
                 >
                   <template #icon><PlayCircleOutlined /></template>
                 </a-button>
@@ -302,7 +286,7 @@ onMounted(() => {
                 title="确定要删除这首歌曲吗？"
                 ok-text="删除"
                 cancel-text="取消"
-                @confirm="confirmDelete(record)"
+                @confirm="confirmDelete(toMusic(record))"
               >
                 <a-tooltip title="删除">
                   <a-button type="primary" danger shape="circle" size="small">

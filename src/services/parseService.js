@@ -195,7 +195,7 @@ const ParseService = {
       const originalFormat = AudioConverter.detectFormat(originalAudioUrl);
       const needsConversion = AudioConverter.needsConversion(originalFormat);
 
-      console.log(`[Parse] 音频格式: ${originalFormat}, 需要转换/压缩: true`);
+      console.log(`[Parse] 音频格式: ${originalFormat}, 需要转换为 OGG/Opus: ${needsConversion}`);
 
       // 3. 生成临时文件路径
       const tempDir = path.resolve(config.tempDir);
@@ -203,21 +203,24 @@ const ParseService = {
 
       const timestamp = Date.now();
       const originalFilePath = path.join(tempDir, `${songId}_${timestamp}_original${originalFormat}`);
-      const mp3FilePath = path.join(tempDir, `${songId}_${timestamp}_compressed.mp3`);
+      const oggFilePath = path.join(tempDir, `${songId}_${timestamp}_compressed.ogg`);
 
       tempFiles.push(originalFilePath);
-      tempFiles.push(mp3FilePath);
+      tempFiles.push(oggFilePath);
 
       // 4. 下载音频文件
       await this.downloadAudio(originalAudioUrl, originalFilePath);
 
-      // 5. 转换/压缩音频（所有格式都进行处理以控制文件大小）
-      console.log(`[Parse] 开始转换/压缩音频: ${originalFormat} -> .mp3 (96kbps)`);
-      await AudioConverter.convertToMp3(originalFilePath, mp3FilePath, { audioBitrate: 96 });
-      const finalFilePath = mp3FilePath;
+      // 5. 转换/压缩音频（统一转为 OGG/Opus 单声道，所有格式都进行处理以控制文件大小）
+      console.log(`[Parse] 开始转换/压缩音频: ${originalFormat} -> .ogg (Opus, mono, 64kbps)`);
+      await AudioConverter.convertToOggOpus(originalFilePath, oggFilePath, {
+        audioBitrate: 64,
+        channels: 1,
+      });
+      const finalFilePath = oggFilePath;
 
       // 6. 上传到 COS
-      const cosKey = CosService.generateCosKey(songId);
+      const cosKey = CosService.generateCosKey(songId, '.ogg');
       const audioUrl = await CosService.uploadFile(finalFilePath, cosKey);
 
       // 7. 构建歌词 URL

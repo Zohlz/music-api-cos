@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const MusicController = require('../controllers/musicController');
+const { espAuthMiddleware } = require('../middlewares/espAuth');
 
 /**
  * 音乐相关路由
@@ -8,6 +9,10 @@ const MusicController = require('../controllers/musicController');
 
 // POST /api/music/parse - 解析并保存音乐
 router.post('/parse', MusicController.parseAndSave);
+
+// GET /api/music/esp/:songId - ESP端根据歌曲ID解析并返回音乐（设备签名鉴权）
+// 说明：需配合 GET /api/search/esp/search 使用，songId 为酷我歌曲ID
+router.get('/esp/:songId', espAuthMiddleware, MusicController.espGetMusicBySongId);
 
 // GET /api/music/list - 获取音乐列表
 router.get('/list', MusicController.list);

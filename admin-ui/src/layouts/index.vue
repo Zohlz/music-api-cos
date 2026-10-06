@@ -46,7 +46,7 @@ const menuItems = [
   },
 ]
 
-function handleMenuClick({ key }: { key: string }) {
+function handleMenuClick({ key }: { key: string | number }) {
   const item = menuItems.find(m => m.key === key)
   if (item) {
     router.push(item.path)

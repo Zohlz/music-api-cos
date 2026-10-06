@@ -31,6 +31,63 @@ const SearchController = {
   },
 
   /**
+   * ESP端搜索音乐
+   * GET /api/search/esp/search
+   * 参数：msg - 歌曲名称（可与 /api/search 相同，兼容 keyword）
+   * 返回：搜索结果列表（含 songId），供设备选择后调用 /api/music/esp/:songId
+   */
+  async espSearch(req, res, next) {
+    try {
+      const { msg, keyword, pageNum = 1, pageSize = 10 } = req.query;
+
+      const keywordStr = (msg || keyword || '').trim();
+      if (!keywordStr) {
+        return response.badRequest(res, '歌曲名称不能为空');
+      }
+
+      console.log(`[ESP] 收到搜索请求: keyword=${keywordStr}`);
+
+      const result = await ParseService.searchKuwoMusic(
+        keywordStr,
+        parseInt(pageNum),
+        parseInt(pageSize)
+      );
+
+      response.successPage(res, result.rows, result.total);
+    } catch (error) {
+      console.error(`[ESP] 搜索失败:`, error.message);
+      next(error);
+    }
+  },
+
+  /**
+   * ESP端获取服务器已有音乐列表（主页展示）
+   * GET /api/search/esp/list
+   * 参数：songName/artist 可选过滤，pageNum 默认 1，pageSize 默认 10
+   * 返回：分页的已入库音乐列表
+   */
+  async espMusicList(req, res, next) {
+    try {
+      const { songName, artist, pageNum = 1, pageSize = 10 } = req.query;
+
+      console.log(`[ESP] 收到音乐列表请求: pageNum=${pageNum}, pageSize=${pageSize}`);
+
+      const { list, total } = await MusicService.findList({
+        songName,
+        artist,
+        pageNum: parseInt(pageNum),
+        pageSize: parseInt(pageSize),
+      });
+
+      const rows = MusicService.formatMusicListResponse(list);
+      response.successPage(res, rows, total);
+    } catch (error) {
+      console.error(`[ESP] 获取音乐列表失败:`, error.message);
+      next(error);
+    }
+  },
+
+  /**
    * ESP端音乐解析接口
    * GET /api/search/esp
    * 参数：msg - 歌曲名称

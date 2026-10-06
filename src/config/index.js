@@ -31,6 +31,14 @@ module.exports = {
     lyricUrl: 'https://api.xiaodaokg.com/kw/kwlyric.php',
   },
 
+  // ESP32 设备鉴权配置（设备密钥 + HMAC 签名，不走账号体系）
+  esp: {
+    accessKey: process.env.ESP_ACCESS_KEY || '',
+    accessSecret: process.env.ESP_ACCESS_SECRET || '',
+    signatureTtl: parseInt(process.env.ESP_SIGNATURE_TTL, 10) || 300, // 签名有效期（秒）
+    staticToken: process.env.ESP_STATIC_TOKEN || '', // 简易模式，生产环境留空
+  },
+
   // JWT 配置
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
